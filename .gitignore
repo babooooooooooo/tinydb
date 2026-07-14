@@ -1,0 +1,49 @@
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+
+# ─── Virtual envs ────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ─── Testing / coverage ──────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.cache
+.mypy_cache/
+.ruff_cache/
+
+# ─── IDE ─────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ─── tinydb runtime artifacts ────────────────────────────
+# in-memory storage mode pollutes working directory
+:memory:
+:memory:*
+*.db
+*.sqlite
+*.sqlite3
+*.wal
+
+# ─── OpenSpec (local working state, archives live in tree) ─
+# keep proposals/tasks/designs, ignore local CLIs
+
+# ─── Claude local hooks / skills (machine-local, not portable) ─
+.claude/

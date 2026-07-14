@@ -1,0 +1,1 @@
+"""Query executor: Volcano-style operator tree + planner."""
