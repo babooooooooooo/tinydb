@@ -73,6 +73,9 @@ KEYWORDS: frozenset[str] = frozenset(
         "COUNT",
         "SUM",
         "AVG",
+        "DOUBLE",
+        "REAL",
+        "BOOLEAN",
     }
 )
 

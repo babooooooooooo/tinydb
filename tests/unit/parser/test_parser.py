@@ -67,6 +67,23 @@ class TestCreateTable:
         with pytest.raises(ParseError):
             parse("CREATE TABLE t (data BLOB)")
 
+    @pytest.mark.parametrize(
+        "keyword,expected_tag",
+        [
+            ("DOUBLE", Tag.FLOAT),
+            ("REAL", Tag.FLOAT),
+            ("BOOLEAN", Tag.BOOL),
+        ],
+    )
+    def test_type_alias_resolves(self, keyword: str, expected_tag: Tag) -> None:
+        """SQL aliases: DOUBLE/REAL -> FLOAT, BOOLEAN -> BOOL. Same Tag, no
+        separate enum members.
+        """
+        stmt = _parse_one(f"CREATE TABLE t (a {keyword})")
+        col = stmt.columns[0]
+        assert col.name == "a"
+        assert col.type is expected_tag
+
 
 class TestInsert:
     def test_no_column_list(self):

@@ -117,15 +117,20 @@ class Parser:
     def _parse_column_def(self) -> ColumnDef:
         name_tok = self._expect(TokKind.IDENT)
         type_tok = self._peek()
-        if type_tok.kind is not TokKind.KEYWORD or type_tok.lexeme not in (
-            "INT",
-            "FLOAT",
-            "TEXT",
-            "BOOL",
+        if type_tok.kind is TokKind.KEYWORD and type_tok.lexeme in ("DOUBLE", "REAL"):
+            self._advance()
+            col_type = Tag.FLOAT
+        elif type_tok.kind is TokKind.KEYWORD and type_tok.lexeme == "BOOLEAN":
+            self._advance()
+            col_type = Tag.BOOL
+        elif (
+            type_tok.kind is TokKind.KEYWORD
+            and type_tok.lexeme in ("INT", "FLOAT", "TEXT", "BOOL")
         ):
+            self._advance()
+            col_type = Tag[type_tok.lexeme]
+        else:
             raise self._err(f"expected a column type, got {type_tok.lexeme!r}")
-        self._advance()
-        col_type = Tag[type_tok.lexeme]
         not_null = False
         primary_key = False
         unique = False
