@@ -42,7 +42,7 @@ from tinydb.parser.ast import (
     UnaryOp,
     UpdateStmt,
 )
-from tinydb.parser.lexer import Lexer, TokKind, Token
+from tinydb.parser.lexer import KEYWORDS, Lexer, TokKind, Token
 from tinydb.types import Tag
 
 
@@ -432,6 +432,10 @@ class Parser:
     def _expect(self, kind: TokKind) -> Token:
         t = self._peek()
         if t.kind is not kind:
+            if kind is TokKind.IDENT and t.kind is TokKind.KEYWORD and t.lexeme in KEYWORDS:
+                raise self._err(
+                    f"{t.lexeme!r} is a reserved keyword; rename it or quote it"
+                )
             raise self._err(f"expected {kind.name.lower()}, got {t.lexeme!r}")
         return self._advance()
 

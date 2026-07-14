@@ -199,3 +199,35 @@ class TestExpressions:
         assert isinstance(stmt.items[0].expr, ColumnRef)
         assert stmt.items[0].expr.table == "u"
         assert stmt.items[0].expr.name == "id"
+
+
+class TestReservedWordDiagnostics:
+    """When a reserved word is used where an identifier is required, the
+    parser should produce a clear message naming the keyword and suggesting
+    either renaming or quoting. Before the fix, the message was the bare
+    'expected ident, got 'ORDER'' with no hint about *why* it's wrong.
+    """
+
+    @pytest.mark.parametrize(
+        "sql,keyword",
+        [
+            ("CREATE TABLE order (id INT)", "ORDER"),
+            ("CREATE TABLE select (id INT)", "SELECT"),
+            ("CREATE TABLE t (key INT)", "KEY"),
+            ("CREATE TABLE t (id INT, count INT)", "COUNT"),
+        ],
+    )
+    def test_table_or_column_uses_reserved_word_says_so(self, sql: str, keyword: str) -> None:
+        with pytest.raises(ParseError) as excinfo:
+            parse(sql)
+        msg = str(excinfo.value).lower()
+        assert "reserved" in msg, f"expected 'reserved' in error, got: {excinfo.value}"
+        assert keyword.lower() in msg, f"expected {keyword} in error, got: {excinfo.value}"
+        assert "rename" in msg or "quote" in msg, f"expected a hint, got: {excinfo.value}"
+
+    def test_non_keyword_ident_error_still_works(self) -> None:
+        """Sanity: the friendlier message must not regress the normal case."""
+        with pytest.raises(ParseError) as excinfo:
+            parse("CREATE TABLE 123bad (id INT)")
+        msg = str(excinfo.value).lower()
+        assert "expected" in msg
