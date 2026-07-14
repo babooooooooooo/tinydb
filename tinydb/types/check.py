@@ -60,6 +60,42 @@ def coerce(
             )
     # Cross-tag coercions (literal payload must be coercible into declared).
     if literal.tag is Tag.TEXT:
+        if declared is Tag.DATE:
+            try:
+                from datetime import date as _date
+                d = _date.fromisoformat(literal.payload)
+            except (TypeError, ValueError):
+                raise TypeMismatchError(
+                    f"DATE expects YYYY-MM-DD; got {literal.payload!r}"
+                )
+            return Value.date((d - _date(1970, 1, 1)).days)
+        if declared is Tag.TIME:
+            from datetime import time as _time
+            try:
+                t = _time.fromisoformat(literal.payload)
+            except (TypeError, ValueError):
+                raise TypeMismatchError(
+                    f"TIME expects HH:MM[:SS]; got {literal.payload!r}"
+                )
+            return Value.time(t.hour * 3600 + t.minute * 60 + t.second)
+        if declared is Tag.TIMESTAMP:
+            from datetime import datetime as _dt, timezone as _tz
+            s = literal.payload
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            try:
+                # If only a date is given (10 chars), default to midnight UTC.
+                if len(s) == 10:
+                    date_obj = coerce(Value.text(s), Tag.DATE)
+                    return Value.timestamp(int(date_obj.payload) * 86400)
+                dt = _dt.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_tz.utc)
+            except (TypeError, ValueError):
+                raise TypeMismatchError(
+                    f"TIMESTAMP expects ISO-8601; got {literal.payload!r}"
+                )
+            return Value.timestamp(int(dt.timestamp()))
         if declared is Tag.VARCHAR:
             if len(declared_params) != 1:
                 raise TypeMismatchError(

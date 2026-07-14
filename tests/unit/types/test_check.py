@@ -196,6 +196,79 @@ class TestCoerceIntegerRanges:
             coerce(Value.int_(value), Tag.BIGINT)
 
 
+class TestCoerceDateTime:
+    """DATE / TIME / TIMESTAMP accept TEXT literals in ISO-8601 form and
+    convert to int64 (days / seconds-of-day / epoch seconds)."""
+
+    def test_date_iso_ok(self) -> None:
+        out = coerce(Value.text("2025-01-15"), Tag.DATE)
+        assert out.tag is Tag.DATE
+        from datetime import date
+        expected = (date(2025, 1, 15) - date(1970, 1, 1)).days
+        assert out.payload == expected
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["2025/01/15", "01-15-2025", "", "not a date", "2025-13-01"],
+    )
+    def test_date_bad_format_raises(self, bad: str) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text(bad), Tag.DATE)
+
+    def test_time_hms_ok(self) -> None:
+        out = coerce(Value.text("13:45:30"), Tag.TIME)
+        assert out.tag is Tag.TIME
+        assert out.payload == 13 * 3600 + 45 * 60 + 30
+
+    def test_time_hm_ok(self) -> None:
+        out = coerce(Value.text("13:45"), Tag.TIME)
+        assert out.payload == 13 * 3600 + 45 * 60
+
+    @pytest.mark.parametrize("bad", ["25:99:99", "abc", "", "1:2:3:4"])
+    def test_time_bad_format_raises(self, bad: str) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text(bad), Tag.TIME)
+
+    def test_timestamp_full_iso_ok(self) -> None:
+        from datetime import datetime, timezone
+        out = coerce(Value.text("2025-01-15T13:45:30"), Tag.TIMESTAMP)
+        assert out.tag is Tag.TIMESTAMP
+        expected = int(datetime(2025, 1, 15, 13, 45, 30, tzinfo=timezone.utc).timestamp())
+        assert out.payload == expected
+
+    def test_timestamp_accepts_z_suffix(self) -> None:
+        """Python 3.10's fromisoformat doesn't accept 'Z'; we substitute 'Z' -> '+00:00'."""
+        from datetime import datetime, timezone
+        out_z = coerce(Value.text("2025-01-15T13:45:30Z"), Tag.TIMESTAMP)
+        out_offset = coerce(Value.text("2025-01-15T13:45:30+00:00"), Tag.TIMESTAMP)
+        assert out_z.payload == out_offset.payload
+
+    def test_timestamp_date_only_ok(self) -> None:
+        out = coerce(Value.text("2025-01-15"), Tag.TIMESTAMP)
+        assert out.tag is Tag.TIMESTAMP
+        # Midnight UTC of that day.
+        from datetime import datetime, timezone
+        expected = int(datetime(2025, 1, 15, tzinfo=timezone.utc).timestamp())
+        assert out.payload == expected
+
+    @pytest.mark.parametrize("bad", ["yesterday", "2025-01-15 25:00", "garbage"])
+    def test_timestamp_bad_format_raises(self, bad: str) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text(bad), Tag.TIMESTAMP)
+
+    def test_null_into_date_ok(self) -> None:
+        null = Value.null()
+        assert coerce(null, Tag.DATE) is null
+
+    def test_null_into_time_ok(self) -> None:
+        null = Value.null()
+        assert coerce(null, Tag.TIME) is null
+
+    def test_null_into_timestamp_ok(self) -> None:
+        null = Value.null()
+        assert coerce(null, Tag.TIMESTAMP) is null
+
+
 class TestTypesComparable:
     @pytest.mark.parametrize(
         "a,b",
