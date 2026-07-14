@@ -53,6 +53,26 @@ class TestCoerceRejections:
             coerce(Value.bool_(False), Tag.FLOAT)
 
 
+class TestCoerceFloatRejections:
+    """FLOAT rejects inf / -inf / NaN at coerce time. finite floats pass."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [float("inf"), float("-inf"), float("nan")],
+    )
+    def test_non_finite_float_rejected(self, value: float) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.float_(value), Tag.FLOAT)
+
+    def test_finite_float_ok(self) -> None:
+        out = coerce(Value.float_(1.5), Tag.FLOAT)
+        assert out.payload == 1.5
+
+    def test_zero_float_ok(self) -> None:
+        out = coerce(Value.float_(0.0), Tag.FLOAT)
+        assert out.payload == 0.0
+
+
 class TestTypesComparable:
     @pytest.mark.parametrize(
         "a,b",

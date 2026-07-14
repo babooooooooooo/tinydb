@@ -4,9 +4,14 @@
 column declared as ``declared``. NULL is always allowed (the NULL/NOT NULL
 constraint is checked separately by the executor). INT may be promoted to
 FLOAT for storage; all other cross-type writes raise ``TypeMismatchError``.
+
+FLOAT additionally rejects ``inf``, ``-inf``, and NaN at coerce time
+(SQL has no representation for non-finite floats).
 """
 
 from __future__ import annotations
+
+import math
 
 from tinydb.errors import TypeMismatchError
 from tinydb.types.value import Tag, Value
@@ -19,11 +24,16 @@ def coerce(literal: Value, declared: Tag) -> Value:
     - Same tag → return as-is.
     - literal is NULL → return NULL (NOT NULL is checked elsewhere).
     - literal is INT, declared is FLOAT → promote to float.
+    - FLOAT declared rejects non-finite literals (inf, -inf, NaN).
     - Any other mismatch → ``TypeMismatchError``.
     """
     if literal.tag is Tag.NULL:
         return literal
     if literal.tag is declared:
+        if declared is Tag.FLOAT and not math.isfinite(literal.payload):
+            raise TypeMismatchError(
+                f"FLOAT value must be finite; got {literal.payload!r}"
+            )
         return literal
     if literal.tag is Tag.INT and declared is Tag.FLOAT:
         return Value.float_(float(literal.payload))
