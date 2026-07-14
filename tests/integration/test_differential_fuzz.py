@@ -363,6 +363,149 @@ _OPS: list[Callable[[random.Random, Database, ReferenceModel], None]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Record-and-replay (state-independent, for the persistence test)
+# ---------------------------------------------------------------------------
+#
+# The live driver above consumes the rng inside each op, and one of the
+# ops (``_op_insert``) consumes rng conditionally on model state. That
+# makes the rng sequence state-dependent, which is fine for the in-
+# memory differential tests (model and db are advanced in lockstep)
+# but is a trap for persistence tests: replaying the rng against a
+# reopened DB re-issues the same INSERTs, the DB raises ConstraintError
+# for ones it already has, and the test silently passes even when
+# persistence is broken.
+#
+# The recorder below is the state-independent counterpart: it consumes
+# rng in a fixed order that does NOT depend on the model or the DB.
+# The recorded op list can be replayed any number of times against
+# any starting state and produces deterministic SQL + model output.
+
+
+# Each kind is a string label. The order here is the rng.choice()
+# order during recording — keep it stable.
+_OP_KINDS: list[str] = [
+    "insert",
+    "select_eq_pk",
+    "select_eq_a",
+    "select_eq_b",
+    "select_all",
+    "count_star",
+    "sum_a",
+    "sum_c",
+    "group_by_b_sum_a",
+    "update_a",
+    "update_b",
+    "delete_eq_pk",
+    "delete_eq_a",
+]
+
+
+def _record_ops(rng: random.Random, n_ops: int) -> list[tuple]:
+    """Generate a list of (kind, *params) tuples, all state-independent
+    of any database or model. Each tuple is enough to reproduce both
+    the SQL statement and the corresponding model mutation.
+
+    Mirrors ``_OPS`` 1:1 — every kind that can be live-driven is also
+    recordable. The probability of an unconditional pk re-roll in
+    ``_record_op_insert`` (0.3) is a rough match for the old
+    state-dependent behavior in ``_op_insert``.
+    """
+    ops: list[tuple] = []
+    for _ in range(n_ops):
+        kind = rng.choice(_OP_KINDS)
+        if kind == "insert":
+            pk = _random_int(rng, 1, 30)
+            # Unconditional random.random() so rng consumption is fixed
+            # regardless of model state. Re-roll pk with probability 0.3.
+            if rng.random() < 0.3:
+                pk = _random_int(rng, 1, 30)
+            a = _random_int(rng, 1, 100)
+            b = _random_text(rng)
+            c = _random_int(rng, 0, 10) if rng.random() > 0.25 else None
+            ops.append(("insert", pk, a, b, c))
+        elif kind == "select_eq_pk":
+            ops.append(("select_eq_pk", _random_int(rng, 1, 30)))
+        elif kind == "select_eq_a":
+            ops.append(("select_eq_a", _random_int(rng, 1, 100)))
+        elif kind == "select_eq_b":
+            ops.append(("select_eq_b", _random_text(rng)))
+        elif kind == "select_all":
+            ops.append(("select_all",))
+        elif kind == "count_star":
+            ops.append(("count_star",))
+        elif kind == "sum_a":
+            ops.append(("sum_a",))
+        elif kind == "sum_c":
+            ops.append(("sum_c",))
+        elif kind == "group_by_b_sum_a":
+            ops.append(("group_by_b_sum_a",))
+        elif kind == "update_a":
+            ops.append(
+                (
+                    "update_a",
+                    _random_int(rng, 1, 100),
+                    _random_int(rng, 1, 100),
+                )
+            )
+        elif kind == "update_b":
+            ops.append(("update_b", _random_text(rng), _random_text(rng)))
+        elif kind == "delete_eq_pk":
+            ops.append(("delete_eq_pk", _random_int(rng, 1, 30)))
+        elif kind == "delete_eq_a":
+            ops.append(("delete_eq_a", _random_int(rng, 1, 100)))
+        else:
+            raise AssertionError(f"unknown recorded op kind: {kind}")
+    return ops
+
+
+def _replay_op(
+    op: tuple, db: Database, model: ReferenceModel
+) -> None:
+    """Execute one recorded op against db + model.
+
+    Mirrors the live op helpers 1:1 — INSERT/UPDATE/DELETE catch
+    ConstraintError so the fuzzer can keep going (same as
+    ``_do_insert`` etc.); SELECT compares SQL result to model.
+    """
+    kind = op[0]
+    if kind == "insert":
+        _do_insert(db, model, op[1], op[2], op[3], op[4])
+    elif kind == "select_eq_pk":
+        _do_select_eq(db, model, "pk", op[1])
+    elif kind == "select_eq_a":
+        _do_select_eq(db, model, "a", op[1])
+    elif kind == "select_eq_b":
+        _do_select_eq(db, model, "b", op[1])
+    elif kind == "select_all":
+        _do_select_all_order_by_pk(db, model)
+    elif kind == "count_star":
+        _do_count_star(db, model)
+    elif kind == "sum_a":
+        _do_sum_a(db, model)
+    elif kind == "sum_c":
+        _do_sum_c(db, model)
+    elif kind == "group_by_b_sum_a":
+        _do_group_by_b_sum_a(db, model)
+    elif kind == "update_a":
+        _do_update_eq(db, model, "a", op[1], "a", op[2])
+    elif kind == "update_b":
+        _do_update_eq(db, model, "b", op[1], "b", op[2])
+    elif kind == "delete_eq_pk":
+        _do_delete_eq(db, model, "pk", op[1])
+    elif kind == "delete_eq_a":
+        _do_delete_eq(db, model, "a", op[1])
+    else:
+        raise AssertionError(f"unknown recorded op kind: {kind}")
+
+
+def _replay_ops(
+    ops: list[tuple], db: Database, model: ReferenceModel
+) -> None:
+    for op in ops:
+        _replay_op(op, db, model)
+
+
 def _drive_random_session(
     rng: random.Random, db: Database, model: ReferenceModel, n_ops: int
 ) -> None:
@@ -419,30 +562,63 @@ def test_long_random_session_matches_model(tmp_db):
 
 
 def test_random_session_persists_across_reopen(tmp_db_path):
-    """Random writes, close, reopen, verify model matches reopened DB.
+    """Random writes, close, reopen, verify the on-disk state survives.
 
     Catches the classic "in-memory state looks right but on-disk pages
-    don't" bug — the model is rebuilt from scratch against the reopened
-    database, so any row whose bytes didn't make it to disk shows up
-    as a model/db mismatch.
+    don't" bug. The test asserts that a fresh SELECT against the
+    reopened DB returns exactly the same rows that the pre-close SELECT
+    did — no further writes, no replay of the rng.
+
+    Pattern (per project memory feedback, do not regress):
+      1. Record an op list from a seeded rng, BEFORE touching the DB
+         or any model. The recorder is state-independent — replaying
+         the same list twice produces identical SQL.
+      2. Replay once on a fresh DB (db1) + fresh model (model1).
+      3. Capture db1's state via ``SELECT *`` and assert the model
+         mirrors it (sanity: the recorder is correct).
+      4. Close db1.
+      5. Open db2 (loads from disk).
+      6. Capture db2's state via ``SELECT *`` — NO replay.
+      7. db1_dump must equal db2_dump.
+
+    The previous version of this test replayed the rng (NOT a recorded
+    op list) against the reopened DB, so INSERTs that had already
+    succeeded in session 1 were re-issued in session 2 and raised
+    ConstraintError on the DB. The model and DB diverged in ways that
+    masked persistence bugs. Replaying the recorded op list is the only
+    way to actually test close+reopen.
     """
     rng = random.Random(7)
-    db = Database(str(tmp_db_path))
-    _bootstrap(db)
-    model = ReferenceModel()
-    _drive_random_session(rng, db, model, n_ops=300)
-    db.close()
+    db1 = Database(str(tmp_db_path))
+    _bootstrap(db1)
+    model1 = ReferenceModel()
+    ops = _record_ops(rng, 300)
+    _replay_ops(ops, db1, model1)
+    db1_dump = db1.execute("SELECT pk, a, b, c FROM t ORDER BY pk").rows
+    db1.close()
+
+    # Sanity: the in-memory model should mirror the DB state at close
+    # time. If this fails, _record_ops or _replay_ops is broken — not
+    # the database. (We never assert this against db2, because db2 is
+    # a separate in-memory model that starts empty and is irrelevant
+    # to the persistence property we actually want to test.)
+    model_dump = _stringify_rows(
+        sorted(model1._rows.values(), key=lambda r: r["pk"]),
+        ("pk", "a", "b", "c"),
+    )
+    assert db1_dump == model_dump, (
+        f"Recorded ops did not produce a model that matches the DB at "
+        f"close time (recorder bug?):\n  db1:    {db1_dump}\n  model1: {model_dump}"
+    )
 
     db2 = Database(str(tmp_db_path))
-    # Rebuild a fresh model and replay every SQL op the original session
-    # performed against the reopened DB. The resulting model must equal
-    # the one we kept in memory.
-    expected = ReferenceModel()
-    rng2 = random.Random(7)
-    _drive_random_session(rng2, db2, expected, n_ops=300)
+    db2_dump = db2.execute("SELECT pk, a, b, c FROM t ORDER BY pk").rows
     db2.close()
-    assert model._rows == expected._rows, (
-        "Reopened DB does not match in-memory model after random session"
+
+    assert db1_dump == db2_dump, (
+        f"Reopened DB state differs from pre-close state:\n"
+        f"  db1 (pre-close):  {db1_dump}\n"
+        f"  db2 (post-reopen): {db2_dump}"
     )
 
 
