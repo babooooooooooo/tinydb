@@ -376,3 +376,52 @@ class TestComparison:
         result = tree.range_scan(None, None)
         keys = [k.payload for k, _ in result]
         assert keys == [1, 2, None]
+
+class TestEntrySize:
+    """Defensive: _entry_size must return a numeric size for every
+    supported tag, including the 8 newly added tags. Currently it is only
+    used for indexed columns (PRIMARY KEY / UNIQUE auto-indexes), which
+    we still restrict to INT/TEXT; the new branches are future-proofing."""
+
+    from tinydb.types import Value
+    from tinydb.index.btree import _entry_size
+
+    def test_varchar(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.varchar("abc")) == 1 + 4 + 3
+
+    def test_char(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.char("xyz")) == 1 + 4 + 3
+
+    def test_date(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.date(20000)) == 9
+
+    def test_time(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.time(3600)) == 9
+
+    def test_timestamp(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.timestamp(1_700_000_000)) == 9
+
+    def test_decimal(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.decimal("3.14")) == 1 + 4 + 4
+
+    def test_smallint(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.smallint(1)) == 9
+
+    def test_bigint(self):
+        from tinydb.types import Value
+        from tinydb.index.btree import _entry_size
+        assert _entry_size(Value.bigint(1 << 40)) == 9

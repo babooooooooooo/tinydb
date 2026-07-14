@@ -50,6 +50,7 @@ _FLOAT_KEY_SIZE = 1 + 8
 _BOOL_KEY_SIZE = 1 + 1
 _NULL_KEY_SIZE = 1
 _TEXT_KEY_OVERHEAD = 1 + 4          # tag + length
+_INT64_KEY_SIZE = 1 + 8              # VARCHAR/CHAR/DECIMAL share this
 
 
 def _entry_size(key: Value) -> int:
@@ -62,8 +63,10 @@ def _entry_size(key: Value) -> int:
         return _BOOL_KEY_SIZE
     if key.tag is Tag.NULL:
         return _NULL_KEY_SIZE
-    if key.tag is Tag.TEXT:
+    if key.tag in (Tag.TEXT, Tag.VARCHAR, Tag.CHAR, Tag.DECIMAL):
         return _TEXT_KEY_OVERHEAD + len(key.payload.encode("utf-8"))
+    if key.tag in (Tag.DATE, Tag.TIME, Tag.TIMESTAMP, Tag.SMALLINT, Tag.BIGINT):
+        return _INT64_KEY_SIZE
     raise StorageError(f"unknown tag {key.tag!r}")
 
 
