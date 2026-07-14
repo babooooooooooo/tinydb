@@ -20,7 +20,7 @@
 - 列约束：PRIMARY KEY、NOT NULL、UNIQUE
 - 聚合函数：COUNT、SUM、AVG + GROUP BY
 - B-tree 索引
-- 数据类型系统：INT、FLOAT、TEXT、BOOL
+- 数据类型系统：INT、FLOAT、TEXT、BOOL + SQL92 子集（DOUBLE/REAL/BOOLEAN 别名；VARCHAR(N)/CHAR(N)/DECIMAL(p, s) 参数化；DATE/TIME/TIMESTAMP ISO-8601；SMALLINT/BIGINT 范围校验；FLOAT 拒绝 inf/NaN）
 - ACID 事务：BEGIN、COMMIT、ROLLBACK
 - 单文件磁盘持久化
 - CLI/REPL 交互界面
@@ -47,5 +47,5 @@
 | 查询执行 | 全表扫描 + 索引加速的查询计划与执行 |
 | B-tree 索引 | 基于 B-tree 的索引结构，加速等值和范围查询 |
 | 事务管理 | 基于 WAL 或影子分页的 ACID 事务 |
-| 类型系统 | INT/FLOAT/TEXT/BOOL 的类型检查与存储 |
+| 类型系统 | SQL92 子集：INT/FLOAT/TEXT/BOOL + DOUBLE/REAL/BOOLEAN 别名 + VARCHAR(N)/CHAR(N)/DECIMAL(p,s) 参数化 + DATE/TIME/TIMESTAMP ISO-8601 + SMALLINT/BIGINT；FLOAT 拒绝 inf/NaN |
 | CLI 界面 | 交互式 REPL，支持 SQL 输入和结果展示 |

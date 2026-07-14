@@ -53,7 +53,11 @@ Type `;` to terminate a SQL statement; multi-line input is fine.
 - Clauses: `WHERE`, `ORDER BY [ASC|DESC]`, `LIMIT`, `OFFSET`, `DISTINCT`, `GROUP BY`
 - Aggregates: `COUNT(*)`, `COUNT(col)`, `SUM`, `AVG` (no `MIN`/`MAX`)
 - Joins: single-table only (no JOIN in MVP)
-- Types: `INT`, `FLOAT`, `TEXT`, `BOOL`
+- Types: `INT`, `FLOAT`, `TEXT`, `BOOL`, `DOUBLE`/`REAL` (alias for `FLOAT`), `BOOLEAN` (alias for `BOOL`), `VARCHAR(N)`, `CHAR(N)`, `DATE`, `TIME`, `TIMESTAMP`, `DECIMAL(p, s)`, `SMALLINT`, `BIGINT`
+  - Aliases: `DOUBLE`/`REAL` → `FLOAT`; `BOOLEAN` → `BOOL`
+  - Parameterized: `VARCHAR(N)`, `CHAR(N)`, `DECIMAL(p, s)` — `CHAR(N)` right-pads with spaces, rejects overflow
+  - Date/time literals are ISO-8601 (`'2025-01-15'`, `'13:45:30'`, `'2025-01-15T13:45:30'` with optional `Z` for UTC)
+  - Range: `SMALLINT` is ±32768, `BIGINT` is ±2⁶³; `FLOAT` rejects `inf`/`NaN`
 - Constraints: `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
 - Transactions: `BEGIN`, `COMMIT`, `ROLLBACK` (single-writer)
 
