@@ -25,6 +25,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from tinydb.catalog.catalog import Catalog
@@ -38,7 +39,7 @@ from tinydb.storage.buffer import BufferPool
 from tinydb.storage.disk import DiskManager
 from tinydb.storage.freelist import FreeList
 from tinydb.txn.manager import TransactionManager
-from tinydb.types import Value
+from tinydb.types import Tag, Value
 
 logger = logging.getLogger(__name__)
 
@@ -272,15 +273,28 @@ def _format_value(v: Value) -> str:
     """Render a Value as a string for CLI / ResultSet output."""
     if v.is_null:
         return ""
-    if v.tag.value == 0:  # INT
+    if v.tag is Tag.INT:
         return str(v.payload)
-    if v.tag.value == 1:  # FLOAT
+    if v.tag is Tag.FLOAT:
         f = float(v.payload)
         if f == int(f):
             return str(int(f))
         return repr(f)
-    if v.tag.value == 2:  # TEXT
+    if v.tag is Tag.TEXT:
         return str(v.payload)
-    if v.tag.value == 3:  # BOOL
+    if v.tag is Tag.BOOL:
         return "TRUE" if v.payload else "FALSE"
+    if v.tag in (Tag.VARCHAR, Tag.CHAR, Tag.DECIMAL):
+        # String-backed tags. CHAR keeps its right-padded spaces — do not
+        # strip. DECIMAL is already a canonical string; do not reformat.
+        return str(v.payload)
+    if v.tag is Tag.SMALLINT or v.tag is Tag.BIGINT:
+        return str(v.payload)
+    if v.tag is Tag.DATE:
+        return (date(1970, 1, 1) + timedelta(days=v.payload)).isoformat()
+    if v.tag is Tag.TIME:
+        secs = int(v.payload)
+        return time(secs // 3600, (secs % 3600) // 60, secs % 60).isoformat()
+    if v.tag is Tag.TIMESTAMP:
+        return datetime.fromtimestamp(int(v.payload), tz=timezone.utc).isoformat()
     return repr(v.payload)
