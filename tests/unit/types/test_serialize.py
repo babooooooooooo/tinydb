@@ -52,6 +52,27 @@ class TestRoundTrip:
             Value.text("a" * 1000),
             Value.text("你好,世界"),  # multi-byte UTF-8
             Value.text("🇨🇳"),        # multi-codepoint emoji
+            # New tags (commit C3).
+            Value.varchar("hi"),
+            Value.varchar(""),
+            Value.varchar("a" * 1000),
+            Value.char("x"),
+            Value.char(""),
+            Value.date(0),
+            Value.date(20_000),
+            Value.date(-1),  # pre-epoch (technically allowed for storage)
+            Value.time(0),
+            Value.time(86_399),  # 23:59:59
+            Value.timestamp(0),
+            Value.timestamp(1_700_000_000),
+            Value.decimal("3.14"),
+            Value.decimal("-0.001"),
+            Value.smallint(0),
+            Value.smallint(32_767),
+            Value.smallint(-32_768),
+            Value.bigint(0),
+            Value.bigint(1 << 40),
+            Value.bigint(-(1 << 40)),
         ],
     )
     def test_round_trip(self, value: Value):
@@ -80,6 +101,28 @@ class TestSizeOnDisk:
         v = Value.text("hello, 世界")
         assert size_on_disk(v) == len(serialize(v))
 
+    def test_varchar_overhead_5_bytes(self):
+        assert size_on_disk(Value.varchar("abc")) == 1 + 4 + 3
+
+    def test_char_overhead_5_bytes(self):
+        assert size_on_disk(Value.char("abc")) == 1 + 4 + 3
+
+    def test_decimal_overhead_5_bytes(self):
+        assert size_on_disk(Value.decimal("3.14")) == 1 + 4 + 4
+
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            lambda: Value.date(0),
+            lambda: Value.time(0),
+            lambda: Value.timestamp(0),
+            lambda: Value.smallint(0),
+            lambda: Value.bigint(0),
+        ],
+    )
+    def test_int64_backed_is_9_bytes(self, factory):
+        assert size_on_disk(factory()) == 1 + 8
+
 
 class TestTagBytes:
     """Verify the first byte of each serialized value matches the tag enum."""
@@ -98,6 +141,30 @@ class TestTagBytes:
 
     def test_null_tag(self):
         assert serialize(Value.null())[0] == 4
+
+    def test_varchar_tag(self):
+        assert serialize(Value.varchar("x"))[0] == 5
+
+    def test_char_tag(self):
+        assert serialize(Value.char("x"))[0] == 6
+
+    def test_date_tag(self):
+        assert serialize(Value.date(0))[0] == 7
+
+    def test_time_tag(self):
+        assert serialize(Value.time(0))[0] == 8
+
+    def test_timestamp_tag(self):
+        assert serialize(Value.timestamp(0))[0] == 9
+
+    def test_decimal_tag(self):
+        assert serialize(Value.decimal("3.14"))[0] == 10
+
+    def test_smallint_tag(self):
+        assert serialize(Value.smallint(0))[0] == 11
+
+    def test_bigint_tag(self):
+        assert serialize(Value.bigint(0))[0] == 12
 
 
 class TestOffsets:

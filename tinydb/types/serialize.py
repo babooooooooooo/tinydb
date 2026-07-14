@@ -7,6 +7,9 @@ Format on disk (per value):
     BOOL   : 1 byte (0x00 / 0x01)
     TEXT   : [length : u32 LE] [utf8 bytes]
     NULL   : 0 bytes (tag alone)
+    VARCHAR/CHAR/DECIMAL : same as TEXT (payload is str; length cap is in
+                            ColumnMeta.params, enforced at coerce time)
+    DATE/TIME/TIMESTAMP/SMALLINT/BIGINT : 8 bytes signed LE (q)
 
 ``serialize`` produces a complete ``bytes`` object; ``deserialize`` reads
 a single value from a buffer at the given offset and returns the new offset.
@@ -22,6 +25,7 @@ _INT_FMT = struct.Struct("<bq")        # tag(1) + int64(8) = 9 bytes
 _FLOAT_FMT = struct.Struct("<bd")      # tag(1) + float64(8) = 9 bytes
 _BOOL_FMT = struct.Struct("<B?")       # tag(1) + bool(1) = 2 bytes
 _NULL_FMT = struct.Struct("<B")        # tag(1) = 1 byte
+_INT64_FMT = struct.Struct("<bq")      # tag(1) + int64(8) = 9 bytes (DATE/TIME/TIMESTAMP/SMALLINT/BIGINT)
 
 
 def size_on_disk(value: Value) -> int:
@@ -34,8 +38,10 @@ def size_on_disk(value: Value) -> int:
         return _BOOL_FMT.size
     if value.tag is Tag.NULL:
         return _NULL_FMT.size
-    if value.tag is Tag.TEXT:
+    if value.tag in (Tag.TEXT, Tag.VARCHAR, Tag.CHAR, Tag.DECIMAL):
         return 1 + 4 + len(value.payload.encode("utf-8"))
+    if value.tag in (Tag.DATE, Tag.TIME, Tag.TIMESTAMP, Tag.SMALLINT, Tag.BIGINT):
+        return _INT64_FMT.size
     raise ValueError(f"unknown tag {value.tag!r}")
 
 
@@ -48,9 +54,11 @@ def serialize(value: Value) -> bytes:
         return _BOOL_FMT.pack(Tag.BOOL, value.payload)
     if value.tag is Tag.NULL:
         return _NULL_FMT.pack(Tag.NULL)
-    if value.tag is Tag.TEXT:
+    if value.tag in (Tag.TEXT, Tag.VARCHAR, Tag.CHAR, Tag.DECIMAL):
         encoded = value.payload.encode("utf-8")
-        return struct.pack("<BI", Tag.TEXT, len(encoded)) + encoded
+        return struct.pack("<BI", int(value.tag), len(encoded)) + encoded
+    if value.tag in (Tag.DATE, Tag.TIME, Tag.TIMESTAMP, Tag.SMALLINT, Tag.BIGINT):
+        return _INT64_FMT.pack(int(value.tag), value.payload)
     raise ValueError(f"unknown tag {value.tag!r}")
 
 
@@ -79,7 +87,7 @@ def deserialize(data: bytes, offset: int = 0) -> tuple[Value, int]:
             return Value.bool_(bool(v)), offset + 1
         if tag == Tag.NULL:
             return Value.null(), offset
-        if tag == Tag.TEXT:
+        if tag in (Tag.TEXT, Tag.VARCHAR, Tag.CHAR, Tag.DECIMAL):
             if offset + 4 > len(data):
                 raise ValueError("buffer underrun reading text length")
             (length,) = struct.unpack_from("<I", data, offset)
@@ -87,7 +95,25 @@ def deserialize(data: bytes, offset: int = 0) -> tuple[Value, int]:
             end = offset + length
             if end > len(data):
                 raise ValueError("buffer underrun reading text payload")
-            return Value.text(data[offset:end].decode("utf-8")), end
+            payload = data[offset:end].decode("utf-8")
+            if tag == Tag.TEXT:
+                return Value.text(payload), end
+            if tag == Tag.VARCHAR:
+                return Value.varchar(payload), end
+            if tag == Tag.CHAR:
+                return Value.char(payload), end
+            return Value.decimal(payload), end
+        if tag in (Tag.DATE, Tag.TIME, Tag.TIMESTAMP, Tag.SMALLINT, Tag.BIGINT):
+            (v,) = struct.unpack_from("<q", data, offset)
+            if tag == Tag.DATE:
+                return Value.date(v), offset + 8
+            if tag == Tag.TIME:
+                return Value.time(v), offset + 8
+            if tag == Tag.TIMESTAMP:
+                return Value.timestamp(v), offset + 8
+            if tag == Tag.SMALLINT:
+                return Value.smallint(v), offset + 8
+            return Value.bigint(v), offset + 8
         raise ValueError(f"unknown tag byte {tag}")
     except struct.error as e:
         raise ValueError(str(e)) from e

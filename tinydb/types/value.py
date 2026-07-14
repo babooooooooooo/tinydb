@@ -12,13 +12,28 @@ from typing import Any
 
 
 class Tag(IntEnum):
-    """Scalar value type tag. The numeric value is the on-disk byte encoding."""
+    """Scalar value type tag. The numeric value is the on-disk byte encoding.
+
+    New tags only ever APPEND — numeric values 0-4 are stable so files
+    written before tag expansion stay readable. VARCHAR/CHAR/DECIMAL use
+    the same on-disk format as TEXT (string payload); the length cap is
+    enforced at coerce time against ColumnMeta.params, NOT stored in the
+    Value. DATE/TIME/TIMESTAMP/SMALLINT/BIGINT are int64-backed.
+    """
 
     INT = 0
     FLOAT = 1
     TEXT = 2
     BOOL = 3
     NULL = 4
+    VARCHAR = 5
+    CHAR = 6
+    DATE = 7
+    TIME = 8
+    TIMESTAMP = 9
+    DECIMAL = 10
+    SMALLINT = 11
+    BIGINT = 12
 
 
 # Sentinel returned from comparison methods to indicate SQL UNKNOWN.
@@ -58,6 +73,38 @@ class Value:
     @classmethod
     def bool_(cls, v: bool) -> "Value":
         return cls(Tag.BOOL, bool(v))
+
+    @classmethod
+    def varchar(cls, v: str) -> "Value":
+        return cls(Tag.VARCHAR, str(v))
+
+    @classmethod
+    def char(cls, v: str) -> "Value":
+        return cls(Tag.CHAR, str(v))
+
+    @classmethod
+    def date(cls, days_since_epoch: int) -> "Value":
+        return cls(Tag.DATE, int(days_since_epoch))
+
+    @classmethod
+    def time(cls, seconds_of_day: int) -> "Value":
+        return cls(Tag.TIME, int(seconds_of_day))
+
+    @classmethod
+    def timestamp(cls, epoch_seconds: int) -> "Value":
+        return cls(Tag.TIMESTAMP, int(epoch_seconds))
+
+    @classmethod
+    def decimal(cls, v: str) -> "Value":
+        return cls(Tag.DECIMAL, str(v))
+
+    @classmethod
+    def smallint(cls, v: int) -> "Value":
+        return cls(Tag.SMALLINT, int(v))
+
+    @classmethod
+    def bigint(cls, v: int) -> "Value":
+        return cls(Tag.BIGINT, int(v))
 
     # ---- predicates -------------------------------------------------------
 
