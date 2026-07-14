@@ -44,6 +44,20 @@ def coerce(
         return literal
     if literal.tag is Tag.INT and declared is Tag.FLOAT:
         return Value.float_(float(literal.payload))
+    if literal.tag is Tag.INT:
+        v = int(literal.payload)
+        if declared is Tag.SMALLINT:
+            if -(1 << 15) <= v < (1 << 15):
+                return Value.smallint(v)
+            raise TypeMismatchError(
+                f"value {v} out of range for SMALLINT"
+            )
+        if declared is Tag.BIGINT:
+            if -(1 << 63) <= v < (1 << 63):
+                return Value.bigint(v)
+            raise TypeMismatchError(
+                f"value {v} out of range for BIGINT"
+            )
     # Cross-tag coercions (literal payload must be coercible into declared).
     if literal.tag is Tag.TEXT:
         if declared is Tag.VARCHAR:

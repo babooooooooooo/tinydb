@@ -158,6 +158,44 @@ class TestCoerceParameterized:
         assert coerce(null, Tag.DECIMAL, (10, 2)) is null
 
 
+class TestCoerceIntegerRanges:
+    """SMALLINT/BIGINT enforce int-range match on INT literals."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [0, 32_767, -32_768],
+    )
+    def test_smallint_in_range_ok(self, value: int) -> None:
+        out = coerce(Value.int_(value), Tag.SMALLINT)
+        assert out.tag is Tag.SMALLINT
+        assert out.payload == value
+
+    @pytest.mark.parametrize(
+        "value",
+        [32_768, -32_769, 1_000_000],
+    )
+    def test_smallint_overflow_raises(self, value: int) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.int_(value), Tag.SMALLINT)
+
+    @pytest.mark.parametrize(
+        "value",
+        [0, (1 << 63) - 1, -(1 << 63), 1 << 40, -(1 << 40)],
+    )
+    def test_bigint_in_range_ok(self, value: int) -> None:
+        out = coerce(Value.int_(value), Tag.BIGINT)
+        assert out.tag is Tag.BIGINT
+        assert out.payload == value
+
+    @pytest.mark.parametrize(
+        "value",
+        [1 << 63, -(1 << 63) - 1, 1 << 70],
+    )
+    def test_bigint_overflow_raises(self, value: int) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.int_(value), Tag.BIGINT)
+
+
 class TestTypesComparable:
     @pytest.mark.parametrize(
         "a,b",
