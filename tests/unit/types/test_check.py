@@ -73,6 +73,91 @@ class TestCoerceFloatRejections:
         assert out.payload == 0.0
 
 
+class TestCoerceParameterized:
+    """VARCHAR/CHAR enforce length/precision against ColumnMeta.params.
+    DECIMAL enforces precision/scale on string payload.
+
+    coerces accept a third declared_params: tuple[int, ...] = () argument.
+    VARCHAR(50) column -> params=(50,); CHAR(4) -> params=(4,);
+    DECIMAL(10,2) -> params=(10, 2). VARCHAR/CHAR return a Value tagged as
+    the declared tag (Tag.VARCHAR/CHAR) with the validated string payload;
+    DECIMAL returns Tag.DECIMAL with a canonical str payload.
+    """
+
+    def test_varchar_within_length_ok(self) -> None:
+        out = coerce(Value.text("hi"), Tag.VARCHAR, (50,))
+        assert out.tag is Tag.VARCHAR
+        assert out.payload == "hi"
+
+    def test_varchar_at_boundary_ok(self) -> None:
+        out = coerce(Value.text("a" * 50), Tag.VARCHAR, (50,))
+        assert out.payload == "a" * 50
+
+    def test_varchar_exceeds_length_raises(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("x" * 51), Tag.VARCHAR, (50,))
+
+    def test_varchar_zero_params_rejected(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("ok"), Tag.VARCHAR, ())
+
+    def test_char_pads_short(self) -> None:
+        out = coerce(Value.text("ab"), Tag.CHAR, (5,))
+        assert out.tag is Tag.CHAR
+        assert out.payload == "ab   "
+        assert len(out.payload) == 5
+
+    def test_char_at_boundary_ok(self) -> None:
+        out = coerce(Value.text("abcde"), Tag.CHAR, (5,))
+        assert out.payload == "abcde"
+
+    def test_char_rejects_long(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("abcdef"), Tag.CHAR, (5,))
+
+    def test_char_zero_params_rejected(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("ok"), Tag.CHAR, ())
+
+    def test_decimal_valid(self) -> None:
+        out = coerce(Value.text("3.14"), Tag.DECIMAL, (4, 2))
+        assert out.tag is Tag.DECIMAL
+        assert out.payload == "3.14"
+
+    def test_decimal_too_many_digits_raises(self) -> None:
+        # 4 digits total at scale 2 -> ok. 5 -> too many.
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("123.45"), Tag.DECIMAL, (4, 2))
+
+    def test_decimal_bad_scale_raises(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("3.141"), Tag.DECIMAL, (4, 2))
+
+    def test_decimal_invalid_format_raises(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("abc"), Tag.DECIMAL, (4, 2))
+
+    def test_decimal_negative_within_precision(self) -> None:
+        out = coerce(Value.text("-9.99"), Tag.DECIMAL, (4, 2))
+        assert out.payload == "-9.99"
+
+    def test_decimal_requires_two_params(self) -> None:
+        with pytest.raises(TypeMismatchError):
+            coerce(Value.text("3.14"), Tag.DECIMAL, (4,))
+
+    def test_null_into_varchar_ok(self) -> None:
+        null = Value.null()
+        assert coerce(null, Tag.VARCHAR, (10,)) is null
+
+    def test_null_into_char_ok(self) -> None:
+        null = Value.null()
+        assert coerce(null, Tag.CHAR, (5,)) is null
+
+    def test_null_into_decimal_ok(self) -> None:
+        null = Value.null()
+        assert coerce(null, Tag.DECIMAL, (10, 2)) is null
+
+
 class TestTypesComparable:
     @pytest.mark.parametrize(
         "a,b",

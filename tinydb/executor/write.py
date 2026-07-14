@@ -149,7 +149,7 @@ class Insert(Operator):
                 raise ConstraintError(
                     f"column {col.name!r}: NULL violates NOT NULL"
                 )
-            v = coerce(v, col.type)
+            v = coerce(v, col.type, col.params)
             raw[col.name] = v
         # Build full row in declared-column order. Columns not mentioned
         # in the INSERT statement default to NULL (subject to NOT NULL).
@@ -365,7 +365,7 @@ class Update(Operator):
                     raise ConstraintError(
                         f"column {col.name!r}: NULL violates NOT NULL"
                     )
-                v = coerce(v, col.type)
+                v = coerce(v, col.type, col.params)
                 new_vals[asn.column] = v
             # Check uniqueness for any changed PK / unique columns.
             self._check_unique_after_update(meta, new_vals, old)
