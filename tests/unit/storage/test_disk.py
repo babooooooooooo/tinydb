@@ -13,6 +13,7 @@ from tinydb.storage.page import (
     MAGIC,
     PAGE_HEADER_SIZE,
     PAGE_SIZE,
+    VERSION,
     FileHeader,
     Page,
     PageType,
@@ -34,7 +35,7 @@ class TestOpenCreate:
             assert db_file.stat().st_size == PAGE_SIZE
             header = dm.read_header()
             assert header.magic == MAGIC
-            assert header.version == 1
+            assert header.version == VERSION  # bumped when catalog format changed
             assert header.page_count == 1
             assert header.catalog_root_page == 0
             assert header.free_list_head == 0

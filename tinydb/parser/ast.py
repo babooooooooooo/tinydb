@@ -124,6 +124,7 @@ class ColumnDef:
     not_null: bool = False
     primary_key: bool = False
     unique: bool = False
+    params: tuple[int, ...] = ()  # e.g. (50,) for VARCHAR(50); () for INT
 
 
 @dataclass(frozen=True)

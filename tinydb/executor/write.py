@@ -57,7 +57,11 @@ class CreateTable(Operator):
                 mask |= Constraint.PRIMARY_KEY
             if c.unique:
                 mask |= Constraint.UNIQUE
-            cols.append(ColumnMeta(name=c.name, type=c.type, constraints=mask))
+            cols.append(
+                ColumnMeta(
+                    name=c.name, type=c.type, constraints=mask, params=c.params
+                )
+            )
         self.catalog.create_table(self.stmt.name, cols)
         # PRIMARY KEY and UNIQUE columns get an auto-index so Insert can
         # enforce uniqueness without scanning the heap. The index root

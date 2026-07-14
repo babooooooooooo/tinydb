@@ -129,8 +129,38 @@ class Parser:
         ):
             self._advance()
             col_type = Tag[type_tok.lexeme]
+        elif type_tok.kind is TokKind.KEYWORD and type_tok.lexeme in (
+            "VARCHAR",
+            "CHAR",
+            "DECIMAL",
+            "DATE",
+            "TIME",
+            "TIMESTAMP",
+            "SMALLINT",
+            "BIGINT",
+        ):
+            self._advance()
+            col_type = Tag[type_tok.lexeme]
         else:
             raise self._err(f"expected a column type, got {type_tok.lexeme!r}")
+        # Optional parenthesized parameter list: VARCHAR(N), CHAR(N),
+        # DECIMAL(p, s). Only meaningful for parameterized types; ignored
+        # for zero-arg types like DATE / SMALLINT (still parses harmlessly).
+        params: tuple[int, ...] = ()
+        if self._at(TokKind.LPAREN):
+            self._advance()
+            params_list: list[int] = []
+            while True:
+                tok = self._expect(TokKind.INT)
+                params_list.append(int(tok.lexeme))
+                if self._at(TokKind.COMMA):
+                    self._advance()
+                    continue
+                if self._at(TokKind.RPAREN):
+                    self._advance()
+                    break
+                raise self._err("expected ',' or ')' in type parameter list")
+            params = tuple(params_list)
         not_null = False
         primary_key = False
         unique = False
@@ -157,6 +187,7 @@ class Parser:
             not_null=not_null,
             primary_key=primary_key,
             unique=unique,
+            params=params,
         )
 
     def _parse_drop_table(self) -> DropTableStmt:

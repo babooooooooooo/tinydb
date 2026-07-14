@@ -15,6 +15,36 @@ class TestColumnMeta:
         assert out == c
         assert offset == len(c.pack())
 
+    def test_default_params_empty_tuple(self):
+        """ColumnMeta constructed without params must default to ()."""
+        c = ColumnMeta("age", Tag.INT)
+        assert c.params == ()
+
+    def test_pack_unpack_with_varchar_params(self):
+        c = ColumnMeta("name", Tag.VARCHAR, 0, params=(50,))
+        out, offset = ColumnMeta.unpack(c.pack())
+        assert out == c
+        assert out.params == (50,)
+
+    def test_pack_unpack_with_char_params(self):
+        c = ColumnMeta("code", Tag.CHAR, 0, params=(4,))
+        out, offset = ColumnMeta.unpack(c.pack())
+        assert out == c
+        assert out.params == (4,)
+
+    def test_pack_unpack_with_decimal_params(self):
+        c = ColumnMeta("price", Tag.DECIMAL, 0, params=(10, 2))
+        out, offset = ColumnMeta.unpack(c.pack())
+        assert out == c
+        assert out.params == (10, 2)
+
+    def test_pack_unpack_params_with_constraints(self):
+        c = ColumnMeta("name", Tag.VARCHAR, Constraint.NOT_NULL, params=(50,))
+        out, offset = ColumnMeta.unpack(c.pack())
+        assert out == c
+        assert out.is_not_null
+        assert out.params == (50,)
+
     def test_constraint_flags(self):
         c = ColumnMeta("id", Tag.INT, Constraint.PRIMARY_KEY)
         assert c.is_primary_key

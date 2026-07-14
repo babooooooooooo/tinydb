@@ -84,6 +84,41 @@ class TestCreateTable:
         assert col.name == "a"
         assert col.type is expected_tag
 
+    @pytest.mark.parametrize(
+        "column_def,expected_tag,expected_params",
+        [
+            ("name VARCHAR(50)", Tag.VARCHAR, (50,)),
+            ("code CHAR(4)", Tag.CHAR, (4,)),
+            ("price DECIMAL(10, 2)", Tag.DECIMAL, (10, 2)),
+            ("body VARCHAR(255)", Tag.VARCHAR, (255,)),
+        ],
+    )
+    def test_parameterized_type_parses(
+        self, column_def: str, expected_tag: Tag, expected_params: tuple[int, ...]
+    ) -> None:
+        stmt = _parse_one(f"CREATE TABLE t ({column_def})")
+        col = stmt.columns[0]
+        assert col.type is expected_tag
+        assert col.params == expected_params
+
+    @pytest.mark.parametrize(
+        "type_kw",
+        ["DATE", "TIME", "TIMESTAMP", "SMALLINT", "BIGINT"],
+    )
+    def test_new_scalar_type_parses(self, type_kw: str) -> None:
+        """The 5 zero-arity new types (no parentheses)."""
+        expected_tag = Tag[type_kw]
+        stmt = _parse_one(f"CREATE TABLE t (a {type_kw})")
+        col = stmt.columns[0]
+        assert col.type is expected_tag
+        assert col.params == ()
+
+    def test_default_params_empty_for_basic_types(self) -> None:
+        """Sanity: existing INT/TEXT/BOOL also get default params=()."""
+        stmt = _parse_one("CREATE TABLE t (id INT, name TEXT)")
+        assert stmt.columns[0].params == ()
+        assert stmt.columns[1].params == ()
+
 
 class TestInsert:
     def test_no_column_list(self):

@@ -59,6 +59,22 @@ class TestFileHeaderRoundTrip:
         with pytest.raises(StorageError):
             h.validate()
 
+    def test_current_version_is_2(self):
+        """Catalog format bumped: ColumnMeta carries optional params.
+
+        Old DBs (VERSION=1) get rejected by validate() at open time.
+        """
+        assert VERSION == 2
+
+    def test_old_version_rejected_by_validate(self):
+        """An old DB (VERSION=1) cannot be opened with the new code."""
+        from tinydb.errors import StorageError
+
+        h = FileHeader(version=1)
+        with pytest.raises(StorageError) as excinfo:
+            h.validate()
+        assert "version" in str(excinfo.value).lower()
+
     def test_unpack_rejects_short_buffer(self):
         with pytest.raises(ValueError):
             FileHeader.unpack(b"\x00" * 16)

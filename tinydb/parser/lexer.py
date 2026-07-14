@@ -76,6 +76,14 @@ KEYWORDS: frozenset[str] = frozenset(
         "DOUBLE",
         "REAL",
         "BOOLEAN",
+        "VARCHAR",
+        "CHAR",
+        "DATE",
+        "TIME",
+        "TIMESTAMP",
+        "DECIMAL",
+        "SMALLINT",
+        "BIGINT",
     }
 )
 

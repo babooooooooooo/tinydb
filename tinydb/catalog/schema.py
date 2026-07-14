@@ -23,6 +23,7 @@ class ColumnMeta:
     name: str
     type: Tag
     constraints: int = 0  # bitmask of Constraint
+    params: tuple[int, ...] = ()  # e.g. (50,) for VARCHAR(50); () for INT
 
     # ---- predicate helpers -----------------------------------------------
 
@@ -41,23 +42,41 @@ class ColumnMeta:
     # ---- serialization ---------------------------------------------------
 
     def pack(self) -> bytes:
+        # Layout: <HIB B I* `name`
+        #   u16 name_len, u32 type_val, u8 constraints, u8 param_count,
+        #   param_count * u32 param values, then utf8 name.
         name_b = self.name.encode("utf-8")
-        return struct.pack(
-            "<HIB",
+        head = struct.pack(
+            "<HIBB",
             len(name_b),
             int(self.type),
             self.constraints,
-        ) + name_b
+            len(self.params),
+        )
+        params_bytes = b"".join(struct.pack("<I", p) for p in self.params)
+        return head + params_bytes + name_b
 
     @classmethod
     def unpack(cls, data: bytes, offset: int = 0) -> tuple["ColumnMeta", int]:
-        (name_len,) = struct.unpack_from("<H", data, offset)
-        offset += 2
-        (type_val, constraints) = struct.unpack_from("<IB", data, offset)
-        offset += 5
+        (name_len, type_val, constraints, param_count) = struct.unpack_from(
+            "<HIBB", data, offset
+        )
+        offset += 2 + 4 + 1 + 1  # 8 bytes
+        params: tuple[int, ...] = ()
+        if param_count:
+            params = tuple(
+                struct.unpack_from("<I", data, offset + 4 * i)[0]
+                for i in range(param_count)
+            )
+            offset += 4 * param_count
         name = data[offset : offset + name_len].decode("utf-8")
         offset += name_len
-        return cls(name=name, type=Tag(type_val), constraints=constraints), offset
+        return cls(
+            name=name,
+            type=Tag(type_val),
+            constraints=constraints,
+            params=params,
+        ), offset
 
 
 @dataclass(frozen=True)

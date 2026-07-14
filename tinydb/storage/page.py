@@ -29,7 +29,7 @@ from enum import IntEnum
 
 PAGE_SIZE: int = 4096
 MAGIC: bytes = b"TINYDB\x00\x00"  # exactly 8 bytes
-VERSION: int = 1
+VERSION: int = 2
 
 # FileHeader occupies exactly PAGE_SIZE bytes; only the first 32 are defined.
 _HEADER_FORMAT = struct.Struct("<8sIIIIII")  # 32 bytes
