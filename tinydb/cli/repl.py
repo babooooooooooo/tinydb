@@ -72,6 +72,8 @@ def _drive_loop(db: Database, in_: TextIO, out: TextIO) -> None:
     while True:
         try:
             prompt = "tinydb> " if not buf else "     -> "
+            out.write(prompt)
+            out.flush()
             line = in_.readline()
         except (EOFError, KeyboardInterrupt):
             out.write("\n")
