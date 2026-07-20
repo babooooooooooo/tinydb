@@ -284,8 +284,12 @@ class Insert(Operator):
             tree = _open_index_tree(self.catalog, self.pool, self.freelist, meta, idx.column, txn=self.txn)
             row_id = IndexScan.encode_row_id(row_pid, row_off)
             tree.insert(key, row_id)
-            # If the tree just created its root, persist that back in the index meta.
-            if idx.root_page == 0 and tree.root_page_id != 0:
+            # Persist any root-page change (initial allocation OR a new
+            # internal root grown out of leaf splits). Without this, a
+            # tree whose root has been promoted since the catalog was
+            # last refreshed would lose ``idx.root_page`` across a close
+            # and the next reader would descend into a stale leaf.
+            if tree.root_page_id != idx.root_page and tree.root_page_id != 0:
                 new_idx = IndexMeta(
                     name=idx.name,
                     column=idx.column,
