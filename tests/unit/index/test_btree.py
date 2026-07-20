@@ -425,3 +425,132 @@ class TestEntrySize:
         from tinydb.types import Value
         from tinydb.index.btree import _entry_size
         assert _entry_size(Value.bigint(1 << 40)) == 9
+
+
+# ---- exclusive / inclusive bounds ----------------------------------------
+
+
+class TestExclusiveBounds:
+    """`range_scan_with_bound(low, high, *, low_inclusive, high_inclusive)`
+    lets callers express strict-less-than / strict-greater-than ranges
+    while keeping the original `range_scan(low, high)` (always inclusive)
+    unchanged."""
+
+    def test_gt_only(self, env):
+        """low=5 with low_inclusive=False yields keys strictly > 5."""
+        _, _, tree = env
+        for i in [1, 3, 5, 7, 9]:
+            tree.insert(_i(i), i)
+        result = tree.range_scan_with_bound(
+            _i(5), None, low_inclusive=False, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result] == [7, 9]
+
+    def test_lt_only(self, env):
+        """high=5 with high_inclusive=False yields keys strictly < 5."""
+        _, _, tree = env
+        for i in [1, 3, 5, 7, 9]:
+            tree.insert(_i(i), i)
+        result = tree.range_scan_with_bound(
+            None, _i(5), low_inclusive=True, high_inclusive=False
+        )
+        assert [k.payload for k, _ in result] == [1, 3]
+
+    def test_gt_and_lt_exclusive(self, env):
+        """Both bounds exclusive: open interval (3, 7)."""
+        _, _, tree = env
+        for i in [1, 3, 4, 5, 7, 9]:
+            tree.insert(_i(i), i)
+        result = tree.range_scan_with_bound(
+            _i(3), _i(7), low_inclusive=False, high_inclusive=False
+        )
+        assert [k.payload for k, _ in result] == [4, 5]
+
+    def test_ge_and_le_inclusive(self, env):
+        """Both bounds inclusive matches the legacy inclusive semantics
+        (regression guard for the new API)."""
+        _, _, tree = env
+        for i in [1, 3, 5, 7, 9]:
+            tree.insert(_i(i), i)
+        result = tree.range_scan_with_bound(
+            _i(3), _i(7), low_inclusive=True, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result] == [3, 5, 7]
+
+    def test_open_low(self, env):
+        """low=None means open-low; high side respects its flag."""
+        _, _, tree = env
+        for i in [1, 3, 5, 7, 9]:
+            tree.insert(_i(i), i)
+        result = tree.range_scan_with_bound(
+            None, _i(5), low_inclusive=True, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result] == [1, 3, 5]
+        # Same range with exclusive high drops the 5.
+        result_excl = tree.range_scan_with_bound(
+            None, _i(5), low_inclusive=True, high_inclusive=False
+        )
+        assert [k.payload for k, _ in result_excl] == [1, 3]
+
+    def test_open_high(self, env):
+        """high=None means open-high; low side respects its flag."""
+        _, _, tree = env
+        for i in [1, 3, 5, 7, 9]:
+            tree.insert(_i(i), i)
+        result = tree.range_scan_with_bound(
+            _i(5), None, low_inclusive=True, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result] == [5, 7, 9]
+        # Same range with exclusive low drops the 5.
+        result_excl = tree.range_scan_with_bound(
+            _i(5), None, low_inclusive=False, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result_excl] == [7, 9]
+
+    def test_text_keys_gt_exclusive(self, env):
+        """Exclusive bounds work for TEXT keys as well."""
+        _, _, tree = env
+        for w in ["apple", "banana", "cherry", "date"]:
+            tree.insert(_t(w), 1)
+        result = tree.range_scan_with_bound(
+            _t("banana"), _t("date"),
+            low_inclusive=False, high_inclusive=False,
+        )
+        assert [k.payload for k, _ in result] == ["cherry"]
+
+    def test_null_excluded_when_bound_present(self, env):
+        """When a concrete bound is supplied, NULL keys are dropped from
+        the result. They still sort to the end in the underlying scan,
+        but `range_scan_with_bound` must filter them out so callers can
+        rely on a non-null payload."""
+        _, _, tree = env
+        tree.insert(_i(1), 10)
+        tree.insert(Value.null(), 99)
+        tree.insert(_i(2), 20)
+        tree.insert(Value.null(), 98)
+        tree.insert(_i(3), 30)
+        result = tree.range_scan_with_bound(
+            _i(1), _i(3), low_inclusive=True, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result] == [1, 2, 3]
+        # Also true with exclusive bounds.
+        result_excl = tree.range_scan_with_bound(
+            _i(1), _i(3), low_inclusive=False, high_inclusive=True
+        )
+        assert [k.payload for k, _ in result_excl] == [2, 3]
+
+    def test_contradictory_exclusive_returns_empty(self, env):
+        """An exclusive range where low >= high must yield no rows."""
+        _, _, tree = env
+        for i in [1, 3, 5, 7]:
+            tree.insert(_i(i), i)
+        # low == high with both exclusive => empty.
+        result_eq = tree.range_scan_with_bound(
+            _i(3), _i(3), low_inclusive=False, high_inclusive=False
+        )
+        assert result_eq == []
+        # low > high => empty regardless of inclusive flags.
+        result_gt = tree.range_scan_with_bound(
+            _i(5), _i(3), low_inclusive=True, high_inclusive=True
+        )
+        assert result_gt == []

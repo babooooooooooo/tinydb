@@ -350,6 +350,43 @@ class BPlusTree:
         finally:
             self.pool.unpin_page(page.page_id, dirty=page.dirty)
 
+    def range_scan_with_bound(
+        self,
+        low: Value | None,
+        high: Value | None,
+        *,
+        low_inclusive: bool = True,
+        high_inclusive: bool = True,
+    ) -> list[tuple[Value, int]]:
+        """Yield (key, value_ptr) within ``[low, high]`` honoring inclusive flags.
+
+        ``low_inclusive=False`` makes the lower bound strict (key > low);
+        ``high_inclusive=False`` makes the upper bound strict (key < high).
+        A ``None`` bound is open-ended regardless of its inclusive flag.
+
+        NULL keys are excluded from the result whenever a concrete bound is
+        supplied, so callers using this method see a non-null payload.
+        The legacy ``range_scan`` (always inclusive, NULLs preserved when
+        in range) is left unchanged for callers that depend on it.
+        """
+        # 1) Get the inclusive [low, high] window via the existing scan.
+        #    NULLs that fall inside this window (e.g. low is concrete but
+        #    high is open) are dropped in step 2.
+        candidates = self.range_scan(low, high)
+        # 2) Tighten the window according to the inclusive flags, and
+        #    strip NULLs whenever any concrete bound is supplied.
+        has_bound = low is not None or high is not None
+        out: list[tuple[Value, int]] = []
+        for k, v in candidates:
+            if has_bound and k.tag is Tag.NULL:
+                continue
+            if low is not None and not low_inclusive and _key_eq(k, low):
+                continue
+            if high is not None and not high_inclusive and _key_eq(k, high):
+                continue
+            out.append((k, v))
+        return out
+
     def delete(self, key: Value) -> bool:
         """Delete ``key`` from the tree. Returns True if a key was removed."""
         if self.root_page_id == 0:
