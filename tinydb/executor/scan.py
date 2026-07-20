@@ -124,8 +124,24 @@ class IndexScan(Operator):
         return page_id, offset
 
     def open(self) -> None:
-        # Default: full range scan.
-        self._iter = iter(self.tree.range_scan(None, None))
+        # Route through ``IndexBound`` when the planner produced one.
+        # - ``always_empty`` short-circuits to an empty iterator.
+        # - Otherwise call ``range_scan_with_bound`` so inclusive /
+        #   exclusive flags are honored at the B+ tree level.
+        # - ``None`` bound keeps the legacy full-range behavior.
+        if self.bound is None:
+            self._iter = iter(self.tree.range_scan(None, None))
+        elif self.bound.always_empty:
+            self._iter = iter([])
+        else:
+            self._iter = iter(
+                self.tree.range_scan_with_bound(
+                    self.bound.low,
+                    self.bound.high,
+                    low_inclusive=self.bound.low_inclusive,
+                    high_inclusive=self.bound.high_inclusive,
+                )
+            )
 
     def close(self) -> None:
         self._iter = None
