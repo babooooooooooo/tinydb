@@ -51,6 +51,7 @@ Type `;` to terminate a SQL statement; multi-line input is fine.
 - DDL: `CREATE TABLE`, `DROP TABLE`
 - DML: `INSERT`, `UPDATE`, `DELETE`, `SELECT`
 - Clauses: `WHERE`, `ORDER BY [ASC|DESC]`, `LIMIT`, `OFFSET`, `DISTINCT`, `GROUP BY`
+- Index pushdown: equality (`=`), inclusive (`>=`, `<=`), and exclusive (`>`, `<`) predicates on indexed columns are pushed down into the B+ tree range scan; `OR` / `<>` fall back to sequential scan
 - Aggregates: `COUNT(*)`, `COUNT(col)`, `SUM`, `AVG` (no `MIN`/`MAX`)
 - Joins: single-table only (no JOIN in MVP)
 - Types: `INT`, `FLOAT`, `TEXT`, `BOOL`, `DOUBLE`/`REAL` (alias for `FLOAT`), `BOOLEAN` (alias for `BOOL`), `VARCHAR(N)`, `CHAR(N)`, `DATE`, `TIME`, `TIMESTAMP`, `DECIMAL(p, s)`, `SMALLINT`, `BIGINT`
@@ -77,18 +78,18 @@ The WAL lives next to the data file as `<dbfile>.wal`.
 ```
 tinydb/
   storage/    # DiskManager, BufferPool, Page, FreeList
-  catalog/    # persistent table / column / index metadata
+  catalog/    # persistent table / column / index metadata (VERSION=2)
   parser/     # lexer + recursive-descent SQL parser
   types/      # Value, Tag, serialization, type coercion
-  executor/   # Volcano operators (Scan, Filter, Join, Aggregate, …)
-  index/      # B+ tree
-  txn/        # WAL writer + TransactionManager (begin/commit/rollback)
+  executor/   # Volcano operators (Scan, Filter, Project, Aggregate, …) + planner
+  index/      # B+ tree (range scan with inclusive/exclusive bounds)
+  txn/        # WAL writer + TransactionManager (begin/commit/rollback) + recovery
   cli/        # REPL, tabular formatter, meta-commands
 tests/
   unit/       # per-module unit tests
-  integration # full SQL workflows, CLI tests
+  integration # full SQL workflows, CLI, differential fuzz tests
 openspec/
-  changes/init-tinydb/   # proposal, design, specs, tasks
+  changes/    # in-flight proposals, design docs, specs, tasks
 ```
 
 ## Development
