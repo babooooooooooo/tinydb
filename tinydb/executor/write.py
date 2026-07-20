@@ -15,7 +15,7 @@ from tinydb.catalog.schema import (
     IndexMeta,
     TableMeta,
 )
-from tinydb.errors import ConstraintError, StorageError
+from tinydb.errors import ConstraintError, StorageError, TypeMismatchError
 from tinydb.executor.expressions import eval_expr, is_truthy
 from tinydb.executor.heap import (
     decode_row,

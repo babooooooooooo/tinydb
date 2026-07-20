@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tinydb import Database
-from tinydb.errors import ConstraintError, StorageError
+from tinydb.errors import ConstraintError, StorageError, TypeMismatchError
 
 
 def test_delete_propagates_index_failure(tmp_db, monkeypatch):
@@ -139,6 +139,26 @@ def test_insert_value_count_mismatch(tmp_db):
 
 
 # ---- update ---------------------------------------------------------------
+
+
+def test_update_arithmetic_type_mismatch_raises(tmp_db):
+    """UPDATE SET col = col + <non-numeric> must raise TypeMismatchError
+    rather than silently mutating `col` (or crashing with a bare NameError
+    if `_eval_arith` is missing the import).
+
+    Regression: when _eval_arith raises `TypeMismatchError` but the symbol
+    isn't imported in write.py, the update path blew up with a NameError
+    deep in the executor instead of the typed exception callers can catch.
+    """
+    tmp_db.execute("CREATE TABLE t (id INT PRIMARY KEY, label TEXT)")
+    tmp_db.execute("INSERT INTO t VALUES (1, 'hello')")
+
+    with pytest.raises(TypeMismatchError, match="arithmetic on non-numeric"):
+        tmp_db.execute("UPDATE t SET label = label + 1 WHERE id = 1")
+
+    # The row must NOT be corrupted by a partial update.
+    rs = tmp_db.execute("SELECT label FROM t WHERE id = 1")
+    assert rs.rows == [["hello"]]
 
 
 def test_update_one_row(tmp_db):
