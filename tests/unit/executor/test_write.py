@@ -170,6 +170,19 @@ def test_update_one_row(tmp_db):
     assert rs.rows == [["alicia"]]
 
 
+def test_update_with_multiplication(tmp_db):
+    """The parser must accept ``*`` as a binary multiplication operator in
+    UPDATE expressions (the lexer emits it as TokKind.STAR, not OP, so a
+    strict OP-only check in ``_parse_mul`` would reject the statement).
+    """
+    tmp_db.execute("CREATE TABLE t (id INT PRIMARY KEY, quantity INT)")
+    tmp_db.execute("INSERT INTO t VALUES (1, 21)")
+    rs = tmp_db.execute("UPDATE t SET quantity = quantity * 2 WHERE id = 1")
+    assert rs.rows_affected == 1
+    rs = tmp_db.execute("SELECT quantity FROM t WHERE id = 1")
+    assert rs.rows == [["42"]]
+
+
 def test_update_multiple_rows(tmp_db):
     tmp_db.execute("CREATE TABLE t (id INT PRIMARY KEY, age INT)")
     for i in range(1, 6):

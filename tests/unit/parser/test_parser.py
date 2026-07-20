@@ -187,6 +187,21 @@ class TestUpdate:
         stmt = _parse_one("UPDATE users SET a = 1, b = 2, c = 3")
         assert len(stmt.assignments) == 3
 
+    def test_update_multiplication_precedence(self):
+        # ``price * quantity + tax`` must parse as ``(price * quantity) + tax``
+        # because ``*`` binds tighter than ``+``.
+        stmt = _parse_one(
+            "UPDATE inventory SET total = price * quantity + tax"
+        )
+        assert isinstance(stmt, UpdateStmt)
+        assert len(stmt.assignments) == 1
+        value = stmt.assignments[0].value
+        assert isinstance(value, BinaryOp) and value.op == "+"
+        assert isinstance(value.left, BinaryOp) and value.left.op == "*"
+        assert value.left.left == ColumnRef("price")
+        assert value.left.right == ColumnRef("quantity")
+        assert value.right == ColumnRef("tax")
+
 
 class TestDelete:
     def test_delete_with_where(self):

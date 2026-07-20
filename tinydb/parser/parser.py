@@ -379,7 +379,9 @@ class Parser:
 
     def _parse_mul(self) -> Expr:
         left = self._parse_unary_sign()
-        while self._at(TokKind.OP) and self._peek().lexeme in ("*", "/"):
+        while self._at(TokKind.STAR) or (
+            self._at(TokKind.OP) and self._peek().lexeme in ("*", "/")
+        ):
             op = self._peek().lexeme
             self._advance()
             right = self._parse_unary_sign()
