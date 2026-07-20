@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tinydb.catalog.schema import TableMeta
 from tinydb.executor.heap import iter_rows
 from tinydb.executor.operator import Operator
@@ -11,6 +13,9 @@ from tinydb.storage.buffer import BufferPool
 from tinydb.storage.page import PAGE_HEADER_SIZE, Page, PageType
 from tinydb.types import Value
 from tinydb.types.serialize import deserialize
+
+if TYPE_CHECKING:
+    from tinydb.executor.planner import IndexBound
 
 
 class SeqScan(Operator):
@@ -92,11 +97,13 @@ class IndexScan(Operator):
         tree: BPlusTree,
         table: TableMeta,
         index_column: str,
+        bound: "IndexBound | None" = None,
     ) -> None:
         self.pool = pool
         self.tree = tree
         self.table = table
         self.index_column = index_column
+        self.bound = bound
         self._iter: list[tuple[Value, int]] | None = None
         self._column_names = tuple(c.name for c in table.columns)
 
