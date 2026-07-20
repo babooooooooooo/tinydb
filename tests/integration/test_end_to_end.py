@@ -12,6 +12,9 @@ import pytest
 
 from tinydb import Database
 from tinydb.errors import ConstraintError, StorageError
+from tinydb.executor.planner import plan
+from tinydb.executor.scan import IndexScan, SeqScan
+from tinydb.parser.parser import parse
 
 
 @pytest.fixture
@@ -19,6 +22,21 @@ def fresh_db(tmp_path: Path) -> Database:
     db = Database(str(tmp_path / "e2e.db"))
     yield db
     db.close()
+
+
+def _leftmost_scan(db: Database, sql: str):
+    """Plan ``sql`` against ``db`` and return the leftmost scan operator.
+
+    End-to-end tests use this to assert whether a query pushed its
+    predicate down into an ``IndexScan`` or fell back to a ``SeqScan``,
+    mirroring the operator-chain walk the planner produces.
+    """
+    stmts = parse(sql)
+    op = plan(stmts[0], db.catalog, db.pool, db.freelist)
+    cur = op
+    while hasattr(cur, "child"):
+        cur = cur.child
+    return cur
 
 
 def test_create_insert_select_drop_cycle(fresh_db):
@@ -187,4 +205,86 @@ def test_multiple_tables_in_one_db(tmp_path):
     db2 = Database(p)
     rs = db2.execute("SELECT user_id, SUM(amount) FROM orders GROUP BY user_id ORDER BY user_id")
     assert rs.rows == [["1", "125"], ["2", "100"]]
+    db2.close()
+
+
+# ---- Index pushdown: inclusive/exclusive bounds end-to-end ---------------
+#
+# These exercise the full parser → planner → IndexScan → B+ tree path to
+# confirm range predicates over an indexed column push a bound down (rather
+# than falling back to SeqScan + Filter), that unsafe predicates fall back,
+# and that a contradictory range short-circuits to zero rows.
+
+
+def test_range_predicate_uses_index(fresh_db):
+    fresh_db.execute("CREATE TABLE t (id INT PRIMARY KEY, val INT)")
+    for i in range(1, 11):
+        fresh_db.execute(f"INSERT INTO t VALUES ({i}, {i * 10})")
+
+    sql = "SELECT id FROM t WHERE id >= 3 AND id <= 6 ORDER BY id"
+    assert isinstance(_leftmost_scan(fresh_db, sql), IndexScan)
+    rs = fresh_db.execute(sql)
+    assert rs.rows == [["3"], ["4"], ["5"], ["6"]]
+
+
+def test_open_ended_range_uses_index(fresh_db):
+    fresh_db.execute("CREATE TABLE t (id INT PRIMARY KEY, val INT)")
+    for i in range(1, 11):
+        fresh_db.execute(f"INSERT INTO t VALUES ({i}, {i * 10})")
+
+    sql = "SELECT id FROM t WHERE id > 7 ORDER BY id"
+    scan = _leftmost_scan(fresh_db, sql)
+    assert isinstance(scan, IndexScan)
+    assert scan.bound is not None and not scan.bound.low_inclusive
+    rs = fresh_db.execute(sql)
+    assert rs.rows == [["8"], ["9"], ["10"]]
+
+
+def test_contradictory_range_yields_no_rows(fresh_db):
+    fresh_db.execute("CREATE TABLE t (id INT PRIMARY KEY, val INT)")
+    for i in range(1, 11):
+        fresh_db.execute(f"INSERT INTO t VALUES ({i}, {i * 10})")
+
+    sql = "SELECT id FROM t WHERE id > 8 AND id < 3"
+    scan = _leftmost_scan(fresh_db, sql)
+    assert isinstance(scan, IndexScan)
+    assert scan.bound is not None and scan.bound.always_empty
+    rs = fresh_db.execute(sql)
+    assert rs.rows == []
+
+
+def test_or_falls_back_to_seqscan(fresh_db):
+    fresh_db.execute("CREATE TABLE t (id INT PRIMARY KEY, val INT)")
+    for i in range(1, 6):
+        fresh_db.execute(f"INSERT INTO t VALUES ({i}, {i * 10})")
+
+    sql = "SELECT id FROM t WHERE id = 1 OR id = 4 ORDER BY id"
+    assert isinstance(_leftmost_scan(fresh_db, sql), SeqScan)
+    rs = fresh_db.execute(sql)
+    assert rs.rows == [["1"], ["4"]]
+
+
+def test_neq_falls_back(fresh_db):
+    fresh_db.execute("CREATE TABLE t (id INT PRIMARY KEY, val INT)")
+    for i in range(1, 6):
+        fresh_db.execute(f"INSERT INTO t VALUES ({i}, {i * 10})")
+
+    sql = "SELECT id FROM t WHERE id <> 3 ORDER BY id"
+    assert isinstance(_leftmost_scan(fresh_db, sql), SeqScan)
+    rs = fresh_db.execute(sql)
+    assert rs.rows == [["1"], ["2"], ["4"], ["5"]]
+
+
+def test_range_persists_after_reopen(tmp_db_path):
+    db = Database(str(tmp_db_path))
+    db.execute("CREATE TABLE t (id INT PRIMARY KEY, val INT)")
+    for i in range(1, 21):
+        db.execute(f"INSERT INTO t VALUES ({i}, {i * 10})")
+    db.close()
+
+    db2 = Database(str(tmp_db_path))
+    sql = "SELECT id FROM t WHERE id >= 5 AND id <= 8 ORDER BY id"
+    assert isinstance(_leftmost_scan(db2, sql), IndexScan)
+    rs = db2.execute(sql)
+    assert rs.rows == [["5"], ["6"], ["7"], ["8"]]
     db2.close()
